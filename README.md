@@ -109,7 +109,16 @@ Or cron: `20 4 * * * cfkeep -q --days 3 --out /srv/cfkeep example.com`.
 
 ## Load the files
 
-**PostHog.** Add a Cloudflare R2 (or S3) source in the data warehouse. Point the files URL at one dataset's folder, for example `https://<account-id>.r2.cloudflarestorage.com/my-bucket/cloudflare/ai_fetches/`, choose JSON Lines, and turn on "Combine every file into one table". Repeat for each dataset you want. Use a read-only R2 key for PostHog.
+**PostHog.** In the data warehouse, add a self-managed **Cloudflare R2** (or **S3**) table for each dataset:
+
+| Field | Value |
+|---|---|
+| Table name | `cloudflare_ai_fetches` |
+| Files URL pattern | `https://<account-id>.r2.cloudflarestorage.com/my-bucket/cloudflare/ai_fetches/*.jsonl` |
+| File format | JSON |
+| Access key, secret | a read-only R2 key for the bucket (R2 > Manage API tokens > Object Read only) |
+
+PostHog reads the files when you query, so new days show up without a sync. If your project has PostHog's managed Cloudflare R2 source, you can use that instead: point it at the `cloudflare/` folder, choose JSON Lines, and it makes one table per dataset folder.
 
 **DuckDB.**
 
