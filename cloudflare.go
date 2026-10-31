@@ -79,33 +79,38 @@ func (c *client) graphql(ctx context.Context, query string) (json.RawMessage, er
 }
 
 func (c *client) do(ctx context.Context, method, path string, body, out any) error {
-	var r io.Reader
+	var payload []byte
 	if body != nil {
-		b, err := json.Marshal(body)
+		var err error
+		if payload, err = json.Marshal(body); err != nil {
+			return err
+		}
+	}
+	return withRetry(ctx, func() error {
+		req, err := http.NewRequestWithContext(ctx, method, c.api+path, bytes.NewReader(payload))
 		if err != nil {
 			return err
 		}
-		r = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, c.api+path, r)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("%s %s: HTTP %d: %s", method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, truncate(string(b), 300))
-	}
-	return json.Unmarshal(b, out)
+		req.Header.Set("Authorization", "Bearer "+c.token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return temporary{err}
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+		if err != nil {
+			return temporary{err}
+		}
+		if resp.StatusCode/100 != 2 {
+			err := fmt.Errorf("%s %s: HTTP %d: %s", method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, truncate(string(b), 300))
+			if retryable(resp.StatusCode) {
+				return temporary{err}
+			}
+			return err
+		}
+		return json.Unmarshal(b, out)
+	})
 }
 
 func truncate(s string, n int) string {

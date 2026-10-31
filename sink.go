@@ -89,23 +89,29 @@ type s3Sink struct {
 func (s *s3Sink) put(ctx context.Context, key string, body []byte) error {
 	u := *s.endpoint
 	u.Path = strings.TrimRight(u.Path, "/") + "/" + s.bucket + "/" + key
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-ndjson")
 	sum := sha256.Sum256(body)
-	signV4(req, hex.EncodeToString(sum[:]), s.key, s.secret, s.region, "s3", s.now().UTC())
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("PUT %s: HTTP %d: %s", key, resp.StatusCode, truncate(string(b), 300))
-	}
-	return nil
+	return withRetry(ctx, func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/x-ndjson")
+		signV4(req, hex.EncodeToString(sum[:]), s.key, s.secret, s.region, "s3", s.now().UTC())
+		resp, err := s.http.Do(req)
+		if err != nil {
+			return temporary{err}
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			err := fmt.Errorf("PUT %s: HTTP %d: %s", key, resp.StatusCode, truncate(string(b), 300))
+			if retryable(resp.StatusCode) {
+				return temporary{err}
+			}
+			return err
+		}
+		return nil
+	})
 }
 
 // signV4 adds the x-amz-date, x-amz-content-sha256 and Authorization headers. It signs the host

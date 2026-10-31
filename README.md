@@ -52,7 +52,7 @@ cfkeep --datasets ai_fetches,daily example.com
 cfkeep datasets                             # list the datasets and their columns
 ```
 
-Each file is `<out>/<dataset>/<YYYY-MM-DD>_<zone>.jsonl`. Running a day again replaces its file, so overlapping runs are safe. A day with no rows writes no file. `cfkeep` exits 1 if any day failed, after trying all the others.
+Each file is `<out>/<dataset>/<YYYY-MM-DD>_<zone>.jsonl`. Running a day again replaces its file, so overlapping runs are safe. A day with no rows writes no file. Network errors, HTTP 429 and 5xx answers are retried three times (after 2, 10 and 30 seconds). `cfkeep` exits 1 if any day still failed, after trying all the others.
 
 ### Into a bucket
 
